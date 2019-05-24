@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="7918d13a-b045-4218-9fca-89e75c400d68" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<flow name="extract-data-based-on-paramsFlow" doc:id="5f17fe0f-6008-441e-ade5-166c8f0a2100" >
+		<http:listener doc:name="Listener" doc:id="e7604c4a-813e-4ab0-b80f-f39aa14dc054" config-ref="HTTP_Listener_config" path="/getData"/>
+		<set-variable value="#[(if((attributes.queryParams['select'] as String default &quot;&quot;) == &quot;&quot;) [] else (attributes.queryParams['select'] as String default &quot;&quot;) splitBy(&quot;,&quot;))]" doc:name="Set Variable" doc:id="68a4073e-8b27-41d4-914c-c5884125efcd" variableName="array"/>
+		<logger level="INFO" doc:name="Logger" doc:id="da662b66-1796-443d-8296-83173e41eb3b" message="#[sizeOf(vars.array)]"/>
+		<set-variable value="#[attributes.queryParams['skip']]" doc:name="Set Variable" doc:id="3f002c3a-37b5-455f-a8cf-8819609267a8" variableName="skip"/>
+		<logger level="INFO" doc:name="Logger" doc:id="c665a724-3ff3-4263-8a7f-da5bccf691ed" message="The value of ::: #[vars.skip]"/>
+		<set-variable value="#[attributes.queryParams['orderBy']]" doc:name="Set Variable" doc:id="566b26dd-6120-402a-b172-2dcbebfb9fba" variableName="orderBy"/>
+		<logger level="INFO" doc:name="Logger" doc:id="f08da325-a504-46f4-8896-219c41e3cdbd" message="The value of ::: #[vars.orderBy]" />
+		<ee:transform doc:name="Transform Message" doc:id="e5647a36-70a6-4dbd-b373-63d36b7c5116" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="top" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.queryParams['top']]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="26a3312e-f538-4c04-aa50-e8416775b729" message="The value of ::: #[vars.top]"/>
+		<ee:transform doc:name="Transform Message" doc:id="0cb9c11a-17bc-4069-ae31-77697d994dc8" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var jsonArray = payload.array_of_objects default []
+var arraySize = sizeOf(jsonArray) as Number
+var topValue = vars.top as Number default 0
+var skip = vars.skip as Number default 0
+var orderedBy = vars.orderBy default ""
+var orderedArray = if (orderedBy == 'id') jsonArray orderBy ($.id) else if(orderedBy == 'phnum') jsonArray orderBy($.phnum) else jsonArray
+var topArray = if(topValue >0 and topValue <= arraySize) jsonArray[0 to topValue-1] else []
+var skipArray = if(skip <= arraySize) jsonArray[skip to arraySize-1] else []
+var resultArray = if(topValue==0 and skip==0 and orderedBy == 'phnum') jsonArray orderBy($.phnum) else if(topValue==0 and skip==0 and orderedBy == 'id') jsonArray orderBy($.id) else if(topValue==0 and skip==0) jsonArray
+														else if (sizeOf(topArray) >0 and vars.orderBy == 'id') topArray orderBy($.id) else if(sizeOf(topArray) >0 and vars.orderBy == 'phnum') topArray orderBy($.phnum) else if (sizeOf(topArray) >0) topArray
+                                                        else if (sizeOf(skipArray) >0 and vars.orderBy == 'id') skipArray orderBy($.id) else if(sizeOf(skipArray) >0 and vars.orderBy == 'phnum') skipArray orderBy($.phnum) else if (sizeOf(skipArray) >0) skipArray else []
+---
+{
+	resultArray : resultArray
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="32ddb54c-94e3-4ce8-85eb-a76440de8dc1" message="#[sizeOf(vars.array)]"/>
+		<choice doc:name="Choice" doc:id="83a86db5-d7e3-494e-a7da-d437d66dabac" >
+			<when expression="#[sizeOf(vars.array) &gt;= 1]">
+				<logger level="INFO" doc:name="Logger" doc:id="a8ff03e2-b8b0-43d4-8507-bfcafc1a9919" message="data ::::  #[payload]"/>
+				<ee:transform doc:name="Transform Message" doc:id="39ac86b4-2eed-4957-8bda-e4ff56b04187" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload.resultArray map (item) -> {
+	 (item filterObject ((value, key) -> (vars.array contains key as String default "") ))
+} ]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<set-payload value='#[payload]' doc:name="Set Payload" doc:id="a8ff433d-78cf-45a5-b337-a20bc3049297" />
+			</when>
+			<otherwise >
+				<set-payload value="#[payload]" doc:name="Set Payload" doc:id="8900953d-8b96-45b5-b0a8-afcf6165b5d3" />
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
